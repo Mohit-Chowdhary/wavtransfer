@@ -5,6 +5,7 @@
 #include <vector>
 #include <cstdint>
 #include "kissFFT/kiss_fft.h"
+#include "AES/aes.h"
 
 const int SAMPLE_RATE = 44100;
 const float PI = 3.1415926f;
@@ -146,13 +147,14 @@ std::string decodeFromWAV(std::string inFile){
 }
 
 int main(){
-
-    std::cout << std::flush;
-    std::cout<<"starting\n";
-    encodeToWAV("hello","output.wav");
+    std::cout<<"starting\nEnter string: ";
+    std::string s;
+    std::cin>>s;
+    std::string cipher = aesEncrypt(s, "mysecretkey12345");
+    encodeToWAV(cipher,"output.wav");
     std::cout<<"encoded\n";
-    std::string waht = decodeFromWAV("output.wav");
-    std::cout<<waht<<"\n";
-    std::cout<<"done\n";
+    std::string text = decodeFromWAV("output.wav");
+    std:: string pt = aesDecrypt(text,"mysecretkey12345");
+    std::cout<<"decoded: "<<pt<<"\n";
     return 0;
 }

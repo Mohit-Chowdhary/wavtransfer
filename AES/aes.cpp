@@ -1,10 +1,13 @@
+#include "aes.h"
+#include <string>
 #include <iostream>
 #include <vector>
 #include <algorithm>
+#include <cstdint>
 
-using byte = uint8_t;
+typedef uint8_t aes_byte;
 
-byte sbox[256] = {
+aes_byte sbox[256] = {
 0x63,0x7c,0x77,0x7b,0xf2,0x6b,0x6f,0xc5,0x30,0x01,0x67,0x2b,0xfe,0xd7,0xab,0x76,
 0xca,0x82,0xc9,0x7d,0xfa,0x59,0x47,0xf0,0xad,0xd4,0xa2,0xaf,0x9c,0xa4,0x72,0xc0,
 0xb7,0xfd,0x93,0x26,0x36,0x3f,0xf7,0xcc,0x34,0xa5,0xe5,0xf1,0x71,0xd8,0x31,0x15,
@@ -23,7 +26,7 @@ byte sbox[256] = {
 0x8c,0xa1,0x89,0x0d,0xbf,0xe6,0x42,0x68,0x41,0x99,0x2d,0x0f,0xb0,0x54,0xbb,0x16
 };
 
-byte inv_sbox[256] = {
+aes_byte inv_sbox[256] = {
 0x52,0x09,0x6a,0xd5,0x30,0x36,0xa5,0x38,0xbf,0x40,0xa3,0x9e,0x81,0xf3,0xd7,0xfb,
 0x7c,0xe3,0x39,0x82,0x9b,0x2f,0xff,0x87,0x34,0x8e,0x43,0x44,0xc4,0xde,0xe9,0xcb,
 0x54,0x7b,0x94,0x32,0xa6,0xc2,0x23,0x3d,0xee,0x4c,0x95,0x0b,0x42,0xfa,0xc3,0x4e,
@@ -42,35 +45,35 @@ byte inv_sbox[256] = {
 0x17,0x2b,0x04,0x7e,0xba,0x77,0xd6,0x26,0xe1,0x69,0x14,0x63,0x55,0x21,0x0c,0x7d
 };
 
-byte rcon[11] = {
+aes_byte rcon[11] = {
     0x00,0x01,0x02,0x04,0x08,0x10,0x20,0x40,0x80,0x1b,0x36
 };
 
-void subbytes(byte state[4][4]){
+void subbytes(aes_byte state[4][4]){
     for(int i=0;i<4;i++){
         for(int j=0;j<4;j++){
             state[i][j] = sbox[state[i][j]];
         }
     }
 }
-void invSubbytes(byte state[4][4]){
+void invSubbytes(aes_byte state[4][4]){
     for(int i=0;i<4;i++)
         for(int j=0;j<4;j++)
             state[i][j] = inv_sbox[state[i][j]];
 }
 
-void shiftrows(byte state[4][4]){
+void shiftrows(aes_byte state[4][4]){
     for(int i=0;i<4;i++){
-        rotate(state[i],state[i]+i,state[i]+4);
+        std::rotate(state[i],state[i]+i,state[i]+4);
     }
 }
-void invShiftrows(byte state[4][4]){
+void invShiftrows(aes_byte state[4][4]){
     for(int i=0;i<4;i++)
         std::rotate(state[i], state[i]+(4-i), state[i]+4);
 }
 
-byte galloys(byte a,byte b){
-    byte res = 0;
+aes_byte galloys(aes_byte a,aes_byte b){
+    aes_byte res = 0;
     for(int i=0; i<8; i++){
         if(b&1) res^=a;
         bool hi = a&0x80;
@@ -81,18 +84,18 @@ byte galloys(byte a,byte b){
     return res;
 }
 
-void addroundkey(byte state[4][4], byte roundkey[4][4]){
+void addroundkey(aes_byte state[4][4], aes_byte roundkey[4][4]){
     for(int i=0;i<4;i++)
         for(int j=0;j<4;j++)
             state[i][j] ^= roundkey[i][j];
 }
 
-void mixcolumns(byte state[4][4]){
+void mixcolumns(aes_byte state[4][4]){
     for(int c=0; c<4;c++){
-        byte s0 = state[0][c];
-        byte s1 = state[1][c];
-        byte s2 = state[2][c];
-        byte s3 = state[3][c];
+        aes_byte s0 = state[0][c];
+        aes_byte s1 = state[1][c];
+        aes_byte s2 = state[2][c];
+        aes_byte s3 = state[3][c];
 
         state[0][c] = galloys(0x02,s0) ^ galloys(0x03,s1) ^ s2 ^s3;
         state[1][c] = s0 ^ galloys(0x02,s1) ^ galloys(0x03,s2) ^ s3;
@@ -100,10 +103,10 @@ void mixcolumns(byte state[4][4]){
         state[3][c] = galloys(0x03,s0) ^ s1 ^ s2 ^ galloys(0x02,s3);
     }
 }
-void invMixcolumns(byte state[4][4]){
+void invMixcolumns(aes_byte state[4][4]){
     for(int c=0;c<4;c++){
-        byte s0=state[0][c], s1=state[1][c];
-        byte s2=state[2][c], s3=state[3][c];
+        aes_byte s0=state[0][c], s1=state[1][c];
+        aes_byte s2=state[2][c], s3=state[3][c];
         
         state[0][c] = galloys(0x0e,s0)^galloys(0x0b,s1)^galloys(0x0d,s2)^galloys(0x09,s3);
         state[1][c] = galloys(0x09,s0)^galloys(0x0e,s1)^galloys(0x0b,s2)^galloys(0x0d,s3);
@@ -112,22 +115,22 @@ void invMixcolumns(byte state[4][4]){
     }
 }
 
-void keyExpansion(byte key[16], byte roundKeys[11][4][4]){
+void keyExpansion(aes_byte key[16], aes_byte roundKeys[11][4][4]){
     for(int i=0;i<4;i++)
         for(int j=0;j<4;j++)
             roundKeys[0][i][j] = key[i*4+j];
 
     for(int round=1; round<=10; round++){
-        byte prev[4][4];
-        byte curr[4][4];
+        aes_byte prev[4][4];
+        aes_byte curr[4][4];
         
         for(int i=0;i<4;i++)
             for(int j=0;j<4;j++)
                 prev[i][j] = roundKeys[round-1][i][j];
 
-        byte temp[4] = {prev[0][3],prev[1][3],prev[2][3],prev[3][3]};
+        aes_byte temp[4] = {prev[0][3],prev[1][3],prev[2][3],prev[3][3]};
         
-        byte t = temp[0];
+        aes_byte t = temp[0];
         temp[0]=temp[1]; temp[1]=temp[2]; temp[2]=temp[3]; temp[3]=t;
         
         for(int i=0;i<4;i++) temp[i] = sbox[temp[i]];
@@ -150,7 +153,7 @@ void keyExpansion(byte key[16], byte roundKeys[11][4][4]){
 }
 
 
-void aesEncryptBlock(byte state[4][4], byte roundKeys[11][4][4]){
+void aesEncryptBlock(aes_byte state[4][4], aes_byte roundKeys[11][4][4]){
     addroundkey(state, roundKeys[0]);
     for(int round=1;round<=9;round++){
         subbytes(state);
@@ -163,7 +166,7 @@ void aesEncryptBlock(byte state[4][4], byte roundKeys[11][4][4]){
     addroundkey(state, roundKeys[10]);
 }
  
-void aesDecryptBlock(byte state[4][4], byte roundKeys[11][4][4]){
+void aesDecryptBlock(aes_byte state[4][4], aes_byte roundKeys[11][4][4]){
     addroundkey(state, roundKeys[10]);
     for(int round=9;round>=1;round--){
         invShiftrows(state);
@@ -180,12 +183,12 @@ std::string aesEncrypt(std::string plaintext, std::string key){
     key.resize(16, 0);
     while(plaintext.size() % 16 != 0) plaintext += '\0';
  
-    byte roundKeys[11][4][4];
-    keyExpansion((byte*)key.data(), roundKeys);
+    aes_byte roundKeys[11][4][4];
+    keyExpansion((aes_byte*)key.data(), roundKeys);
  
     std::string result = "";
     for(int block=0; block < (int)plaintext.size()/16; block++){
-        byte state[4][4];
+        aes_byte state[4][4];
         for(int i=0;i<4;i++)
             for(int j=0;j<4;j++)
                 state[i][j] = plaintext[block*16 + i*4 + j];
@@ -200,12 +203,12 @@ std::string aesEncrypt(std::string plaintext, std::string key){
 std::string aesDecrypt(std::string ciphertext, std::string key){
     key.resize(16, 0);
  
-    byte roundKeys[11][4][4];
-    keyExpansion((byte*)key.data(), roundKeys);
+    aes_byte roundKeys[11][4][4];
+    keyExpansion((aes_byte*)key.data(), roundKeys);
  
     std::string result = "";
     for(int block=0; block < (int)ciphertext.size()/16; block++){
-        byte state[4][4];
+        aes_byte state[4][4];
         for(int i=0;i<4;i++)
             for(int j=0;j<4;j++)
                 state[i][j] = ciphertext[block*16 + i*4 + j];
