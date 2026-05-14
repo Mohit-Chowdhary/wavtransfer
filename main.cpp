@@ -3,7 +3,9 @@
 #include <fstream>
 #include <cmath>
 #include <vector>
+#include <array>
 #include <cstdint>
+#include <thread>
 #include "kissFFT/kiss_fft.h"
 #include "AES/aes.h"
 
@@ -76,22 +78,45 @@ void writeWAV(const std:: string& outFile, const std::vector<float>& samples){
 }
 
 void encodeToWAV(const std::string& message,const std:: string& outFile){
-    std::vector<float>  allSamples;
-
+    std::vector<int> bits;
     for(char c: message){
-        for(int i =7; i>=0; i--){
-            int bit = (c>>i) &1;
-            float freq = bit?2000.0f:1000.0f;
-
-            auto chunk = generateTone(freq,0.1f);
-            allSamples.insert(allSamples.end(),chunk.begin(),chunk.end());
+        for(int i=7; i>=0; i--){
+            bits.push_back((c>>i)&1);
         }
     }
-    writeWAV(outFile, allSamples);
+    while(bits.size() % 4 != 0) bits.push_back(0);
+
+    std::vector<int> ch[4];
+    for(int i=0;i<bits.size();i++){
+        ch[i%4].push_back(bits[i]);
+    }
+
+    std::vector<float> samples[4];
+    std::thread t[4];
+
+    for(int i=0;i<4;i++){
+        t[i] = std::thread([&,i](){
+            for(int bit: ch[i]){
+                float freq = bit ? (2000+i*2000):(1000+i*2000);
+                auto chunk = generateTone(freq,0.01f);
+                samples[i].insert(samples[i].end(),chunk.begin(),chunk.end());
+            }
+        });
+    }
+
+    for(int i=0; i<4;i++) t[i].join();
+
+    int len = samples[0].size();
+    std::vector<float> mixed(len);
+    for(int i=0;i<len;i++){
+        mixed[i] = (samples[0][i] + samples[1][i] + samples[2][i] + samples[3][i]) / 4.0f;
+    }
+
+    writeWAV(outFile, mixed);
 
 }
 
-int detectBit(std::vector<int16_t> raw, int pos, int chunkSize){
+std::array<int,4> detectBits(std::vector<int16_t>& raw, int pos, int chunkSize){
     kiss_fft_cfg cfg = kiss_fft_alloc(chunkSize, 0,0,0);
 
     std::vector<kiss_fft_cpx> in(chunkSize);
@@ -105,13 +130,18 @@ int detectBit(std::vector<int16_t> raw, int pos, int chunkSize){
     kiss_fft(cfg,in.data(),out.data());
 
     //Nyquist limit??
-    int bin1000 = 1000* chunkSize/SAMPLE_RATE;
-    int bin2000 = 2000* chunkSize/SAMPLE_RATE;
+    std:: array<int,4> bits;
+    for(int ch=0; ch<4; ch++){
+        int bin1000 = (1000 +ch*2000) * chunkSize/SAMPLE_RATE;
+        int bin2000 = (2000 +ch*2000) * chunkSize/SAMPLE_RATE;
 
-    float mag1 = sqrt(out[bin1000].r*out[bin1000].r + out[bin1000].i*out[bin1000].i);
-    float mag2 = sqrt(out[bin2000].r*out[bin2000].r + out[bin2000].i*out[bin2000].i);
+        float mag1 = sqrt(out[bin1000].r*out[bin1000].r + out[bin1000].i*out[bin1000].i);
+        float mag2 = sqrt(out[bin2000].r*out[bin2000].r + out[bin2000].i*out[bin2000].i);
 
-    return mag2>mag1?1:0;
+        bits[ch] = mag2>mag1?1:0;
+    }
+    kiss_fft_free(cfg);
+    return bits;
 }
 
 std::string decodeFromWAV(std::string inFile){
@@ -125,19 +155,28 @@ std::string decodeFromWAV(std::string inFile){
         raw.push_back(sample);
     }
 
+    std:: vector<int> allBits;
+    int chunkSize =  441;
+
+    for(int pos = 0; pos+chunkSize<=raw.size(); pos+=chunkSize){
+        auto bits = detectBits(raw,pos,chunkSize);
+
+        allBits.push_back(bits[0]);
+        allBits.push_back(bits[1]);
+        allBits.push_back(bits[2]);
+        allBits.push_back(bits[3]);
+    }
+
     std::string result = "";
-    int chunkSize =  4410;
+    
     int bitBuffer = 0;
     int bitCount = 0;
 
-    for(int pos = 0; pos+chunkSize<=raw.size(); pos+=chunkSize){
-        int bit = detectBit(raw,pos,chunkSize);
-
+    for(auto bit:allBits){
         bitBuffer = (bitBuffer<<1) | bit;
         bitCount++;
-
-        if(bitCount == 8){
-            result += (char)bitBuffer;
+        if(bitCount==8){
+            result+=(char)bitBuffer;
             bitBuffer = 0;
             bitCount = 0;
         }
@@ -149,7 +188,7 @@ std::string decodeFromWAV(std::string inFile){
 int main(){
     std::cout<<"starting\nEnter string: ";
     std::string s;
-    std::cin>>s;
+    std::getline(std::cin, s);
     std::string cipher = aesEncrypt(s, "mysecretkey12345");
     encodeToWAV(cipher,"output.wav");
     std::cout<<"encoded\n";
@@ -158,3 +197,39 @@ int main(){
     std::cout<<"decoded: "<<pt<<"\n";
     return 0;
 }
+
+
+
+/*
+Move AES key to .env
+use std::getenv()
+remove hardcoded key
+
+Add packet structure
+preamble/header
+payload length
+checksum/hash
+
+Add SHA-256 or CRC
+verify message integrity after decode
+
+Add Hamming code
+start with Hamming(7,4)
+encode before transmission
+decode + correct after reception
+
+Add windowing before FFT
+Hann/Hamming window
+reduce spectral leakage
+
+Improve frequency detection
+search nearby FFT bins
+don’t rely on exact bin only
+
+Add tolerance thresholds
+avoid random noise being decoded as bits
+
+Preallocate vectors
+reduce repeated reallocations
+optimize inserts
+*/
