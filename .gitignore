@@ -5,3 +5,7 @@
 *.exe
 
 .vscode
+
+*.obj
+*.pbd
+*.pdb
