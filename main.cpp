@@ -4,6 +4,7 @@
 #include <cmath>
 #include <vector>
 #include <array>
+#include <cstdlib>
 #include <cstdint>
 #include <thread>
 #include "kissFFT/kiss_fft.h"
@@ -185,15 +186,32 @@ std::string decodeFromWAV(std::string inFile){
     return result;
 }
 
+std::string loadEnv(const std::string& key){
+    std:: ifstream file(".env");
+    std::string line;
+    while(std:: getline(file,line)){
+        if(line.substr(0,key.size()+1)==key+"="){
+            return line.substr(key.size()+1);
+        }
+    }
+    return "";
+}
+
 int main(){
+    std::string aesKey = loadEnv("AES_KEY");
+    if(aesKey.empty()){
+        std::cerr << "AES_KEY not set\n";
+        return 1;
+    }
+
     std::cout<<"starting\nEnter string: ";
     std::string s;
     std::getline(std::cin, s);
-    std::string cipher = aesEncrypt(s, "mysecretkey12345");
+    std::string cipher = aesEncrypt(s, aesKey);
     encodeToWAV(cipher,"output.wav");
     std::cout<<"encoded\n";
     std::string text = decodeFromWAV("output.wav");
-    std:: string pt = aesDecrypt(text,"mysecretkey12345");
+    std:: string pt = aesDecrypt(text,aesKey);
     std::cout<<"decoded: "<<pt<<"\n";
     return 0;
 }
