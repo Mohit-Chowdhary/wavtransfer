@@ -79,8 +79,14 @@ void writeWAV(const std:: string& outFile, const std::vector<float>& samples){
 }
 
 void encodeToWAV(const std::string& message,const std:: string& outFile){
+    std::string payload = "";
+    payload += (char)0xAA;  // preamble
+    payload += (char)(message.size()>>8);  // length
+    payload += (char)(message.size() & 0xFF);
+    payload += message;
+
     std::vector<int> bits;
-    for(char c: message){
+    for(char c: payload ){
         for(int i=7; i>=0; i--){
             bits.push_back((c>>i)&1);
         }
@@ -117,6 +123,13 @@ void encodeToWAV(const std::string& message,const std:: string& outFile){
 
 }
 
+void applyHannWindow(std::vector<kiss_fft_cpx>& in, int size){
+    for(int i=0;i<size;i++){
+        float window = 0.5* (1 - cos(2*PI*i/(size-1)));
+        in[i].r *= window;
+    }
+}
+
 std::array<int,4> detectBits(std::vector<int16_t>& raw, int pos, int chunkSize){
     kiss_fft_cfg cfg = kiss_fft_alloc(chunkSize, 0,0,0);
 
@@ -127,6 +140,8 @@ std::array<int,4> detectBits(std::vector<int16_t>& raw, int pos, int chunkSize){
         in[i].r = raw[pos+i] / 32767.0f;
         in[i].i = 0;
     }
+
+    applyHannWindow(in,chunkSize);
 
     kiss_fft(cfg,in.data(),out.data());
 
@@ -168,18 +183,40 @@ std::string decodeFromWAV(std::string inFile){
         allBits.push_back(bits[3]);
     }
 
-    std::string result = "";
+    std::vector<int> bytes;
     
     int bitBuffer = 0;
     int bitCount = 0;
+    for(auto x: allBits){
+        bitBuffer = (bitBuffer<<1) | x;
+        if(++bitCount == 8){
+            bytes.push_back(bitBuffer);
+            bitBuffer = 0; bitCount = 0;
+        }
+    }
 
-    for(auto bit:allBits){
-        bitBuffer = (bitBuffer<<1) | bit;
-        bitCount++;
-        if(bitCount==8){
-            result+=(char)bitBuffer;
-            bitBuffer = 0;
-            bitCount = 0;
+    std::string result = "";
+    enum State{ WAIT_PREAMBLE,READ_LEN_HIGH, READ_LEN_LOW, READ_DATA};
+    State state = WAIT_PREAMBLE;
+    int messageLength = 0;
+
+    for(auto b: bytes){
+        switch(state){
+            case WAIT_PREAMBLE:
+                if(b==0xAA) state = READ_LEN_HIGH;
+                break;
+            case READ_LEN_HIGH:
+                messageLength = b<<8;
+                state = READ_LEN_LOW;
+                break;
+            case READ_LEN_LOW:
+                messageLength |= b;
+                state = READ_DATA;
+                break;
+            case READ_DATA:
+                if((int)result.size() < messageLength)
+                    result += (char)b;
+                break;
         }
     }
 
@@ -219,10 +256,6 @@ int main(){
 
 
 /*
-Move AES key to .env
-use std::getenv()
-remove hardcoded key
-
 Add packet structure
 preamble/header
 payload length
